@@ -1,0 +1,189 @@
+//@version=5
+indicator("Cryptonite Scalping", overlay=true)
+
+id = input("123456789", "PineConnector License ID")
+symbol = input("EURUSD.i", "PineConnector Symbol")
+TF_1_time = input("1", "Timeframe 1")
+TF_2_time = input("1", "Timeframe 2")
+TF_3_time = input("1", "Timeframe 3")
+TF_4_time = input("1", "Timeframe 4")
+lengthKC = input(20, title="KC Length")
+multKC = input(1.5, title="KC MultFactor")
+lengthBB = input(20, title="BB Length")
+transaction_size = input(100, "Contract/Share Amount")
+len1=20//input(20,"EMA Length")
+price = input(title = "Source ZLMA", defval=close)
+length = input.int(title="Length ZLMA", defval=49, minval=1, step=1)
+smooth = input.int(title="Smoothing ZLMA", defval=14, minval=1, step=1)
+st1 = input.session("0900-1100", title = "session time 1")
+st2 = input.session("1400-1700", title = "session time 2")
+asia = input.session("0200-0900", title = "Tokyo/Asia time")
+// tokyo_session = input.session("0900-1500", title="Tokyo Session")
+tokyoEnabled = input.bool(false, title = "Enable Tokyo/Asia High Low")
+positionType = input.string("Both", title = "Select Position Type", options = ["Both", "Long", "Short"])
+risk = input.float(1.0, title = "risk")
+TPmultiplier = input.float(3.0, "TP(*risk)")
+
+s1 = time(timeframe.period, st1, "UTC+2")
+s2 = time(timeframe.period, st2, "UTC+2")
+timesession = time == s1 or time == s2
+bgcolor(timesession ? color.new(color.white, 90) : na)
+
+tokyo_session = time(timeframe.period, asia, "UTC+2")
+in_tokyo_session = time == tokyo_session
+bgcolor(in_tokyo_session ? color.new(color.blue, 90) : na)
+
+var float session_high = na
+var float session_low = na
+
+// dailyBarTime = time
+// isNewDay = ta.change(dailyBarTime)
+
+// if isNewDay
+//     session_high := high
+//     session_low := low
+
+// Update highest and lowest prices during Tokyo session
+
+if not in_tokyo_session[1] and in_tokyo_session    
+    session_high := high
+    session_low := low
+else if in_tokyo_session
+    session_high := na(session_high[1]) ? high : math.max(high, session_high[1])
+    session_low := na(session_low[1]) ? low : math.min(low, session_low[1])
+else
+    session_high := session_high[1]
+    session_low := session_low[1]
+
+// plot(session_high)
+// plot(session_low)
+
+var isBreaked = false
+
+if time == s1 and not (time[1] == s1[1])
+    isBreaked := false
+if isBreaked == false
+    isBreaked := (close > session_high and session_high > open) or (open > session_high and session_high > close) or (close > session_low and session_low > open) or (open > session_low and session_low > close) ? true : false
+    // isBreaked := (close > session_low and session_low > open) or (open > session_low and session_low > close) ? 1.05: false
+else
+    isBreaked := isBreaked[1]
+
+//plot(isBreaked)
+// Calculations
+priceMA = ta.wma(ta.wma(price, length),smooth)
+ZLMA = (2 * priceMA) - ta.wma(priceMA, length)
+
+up = ta.change(ZLMA) > 0 , dn = ta.change(ZLMA) < 0
+zup = #2196f3, zdown = #f57f17
+
+// Main Plot
+plot(ZLMA, title="Zero Lag MA", color=up ? zup : zdown, linewidth=4)
+
+out = ta.ema(close, len1)
+width = 5
+upcolor = color.green
+downcolor = color.red
+neutralcolor = color.blue
+linestyle = plot.style_line
+
+kc() =>
+    ma = ta.sma(close, lengthKC)
+    ranged = ta.tr
+    rangema = ta.sma(ranged, lengthKC)
+    upperKC = ma + rangema * multKC
+    lowerKC = ma - rangema * multKC
+    [lowerKC, upperKC]
+
+bb() =>
+    source = close
+    basis = ta.sma(source, lengthBB)
+    dev = multKC * ta.stdev(source, lengthBB)
+    upperBB = basis + dev
+    lowerBB = basis - dev
+    [upperBB, lowerBB]
+
+TF_1 = request.security(syminfo.tickerid, TF_1_time, open) < request.security(syminfo.tickerid, TF_1_time, close) ? true : false
+TF_1_color = TF_1 ? upcolor : downcolor
+TF_2 = request.security(syminfo.tickerid, TF_2_time, open) < request.security(syminfo.tickerid, TF_2_time, close) ? true : false
+TF_2_color = TF_2 ? upcolor : downcolor
+TF_3 = request.security(syminfo.tickerid, TF_3_time, open) < request.security(syminfo.tickerid, TF_3_time, close) ? true : false
+TF_3_color = TF_3 ? upcolor : downcolor
+TF_4 = request.security(syminfo.tickerid, TF_4_time, open) < request.security(syminfo.tickerid, TF_4_time, close) ? true : false
+TF_4_color = TF_4 ? upcolor : downcolor
+
+TF_global = TF_1 and TF_2 and TF_3 and TF_4
+TF_global_bear = TF_1 == false and TF_2 == false and TF_3 == false and TF_4 == false
+TF_global_color = TF_global ? color.green : TF_global_bear ? color.red : color.white
+TF_trigger_width = TF_global ? 6 : width
+len = input(14,"Len ADX DI")
+th = input(20,"th ADX DI")
+en=input(true,"Enable ZLMA")
+TrueRange = math.max(math.max(high-low, math.abs(high-nz(close[1]))), math.abs(low-nz(close[1])))
+DirectionalMovementPlus = high-nz(high[1]) > nz(low[1])-low ? math.max(high-nz(high[1]), 0): 0
+DirectionalMovementMinus = nz(low[1])-low > high-nz(high[1]) ? math.max(nz(low[1])-low, 0): 0
+
+SmoothedTrueRange = 0.0
+SmoothedTrueRange := nz(SmoothedTrueRange[1]) - (nz(SmoothedTrueRange[1])/len) + TrueRange
+SmoothedDirectionalMovementPlus = 0.0
+SmoothedDirectionalMovementPlus := nz(SmoothedDirectionalMovementPlus[1]) - (nz(SmoothedDirectionalMovementPlus[1])/len) + DirectionalMovementPlus
+SmoothedDirectionalMovementMinus = 0.0
+SmoothedDirectionalMovementMinus := nz(SmoothedDirectionalMovementMinus[1]) - (nz(SmoothedDirectionalMovementMinus[1])/len) + DirectionalMovementMinus
+DIPlus = SmoothedDirectionalMovementPlus / SmoothedTrueRange * 100
+DIMinus = SmoothedDirectionalMovementMinus / SmoothedTrueRange * 100
+
+long = false
+short = false
+if not tokyoEnabled and barstate.isconfirmed
+    long:=TF_global and (close> ZLMA or en == false) and DIPlus>DIMinus and DIPlus[1]<DIMinus[1] and (positionType == "Both" or positionType == "Long")
+    short:=TF_global_bear and (close< ZLMA or en == false) and DIPlus<DIMinus and DIPlus[1]>DIMinus[1] and (positionType == "Both" or positionType == "Short")
+else if tokyoEnabled and barstate.isconfirmed
+    long:=TF_global and (close> ZLMA or en == false) and DIPlus>DIMinus and DIPlus[1]<DIMinus[1] and (positionType == "Both" or positionType == "Long") and isBreaked
+    short:=TF_global_bear and (close< ZLMA or en == false) and DIPlus<DIMinus and DIPlus[1]>DIMinus[1] and (positionType == "Both" or positionType == "Short") and isBreaked
+plotshape(long and timesession, style=shape.labelup, location=location.belowbar, text="Long", textcolor=color.white, color=color.green)
+plotshape(short and timesession, style=shape.labeldown, location=location.abovebar, text="Short", textcolor=color.white, color=color.red)
+
+float longSL = na
+longSL := long? ta.lowest(low, 11)[1] : longSL[1]
+longDiffSL = math.abs(close - longSL)
+float longTP = na
+longTP := long ? close + (TPmultiplier * longDiffSL) : longTP[1]
+
+// ENTRY/EXIT
+if long and timesession
+    // id = "7319482073301"
+    ordertype = "buy"
+    // symbol = syminfo.ticker
+    riskk = "risk=" + str.tostring(risk)
+    stop = "sl=" + str.tostring(longSL)
+    profit = "tp=" + str.tostring(longTP)
+    msg = id + "," + ordertype + "," + symbol + "," + riskk + "," + stop + "," + profit
+
+    alert(msg)
+
+    label.new(bar_index, low, msg, yloc=yloc.belowbar, style = label.style_label_up, textcolor = color.white)
+
+// plot(longSL, title='LONG STOP LOSS', linewidth=1, style=plot.style_linebr, color=color.red)
+// plot(longTP, title='LONG TAKE PROFIT', linewidth=1, style=plot.style_linebr, color=color.green)
+
+float shortSL = na
+shortSL := short ? ta.highest(high, 11)[1] : shortSL[1]
+shortDiffSL = math.abs(close - shortSL)
+float shortTP = na
+shortTP :=short ? close - (TPmultiplier * shortDiffSL) : shortTP[1]
+
+// ENTRY/EXIT
+if short and timesession
+    // id = "7319482073301"
+    ordertype = "sell"
+    // symbol = syminfo.ticker
+    riskk = "risk=" + str.tostring(risk)
+    stop = "sl=" + str.tostring(shortSL)
+    profit = "tp=" + str.tostring(shortTP)
+    msg = id + "," + ordertype + "," + symbol + "," + riskk + "," + stop + "," + profit
+
+    alert(msg)
+
+    label.new(bar_index, high, msg, yloc=yloc.abovebar, style = label.style_label_down, textcolor = color.white)
+
+// plot(shortSL, title='SHORT STOP LOSS', linewidth=1, style=plot.style_linebr, color=color.red)
+// plot(shortTP, title='SHORT TAKE PROFIT', linewidth=1, style=plot.style_linebr, color=color.green)
